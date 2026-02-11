@@ -9,7 +9,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-/* ================= CONFIG CLOUDINARY ================= */
+/* ================= CLOUDINARY CONFIG ================= */
 cloudinary.config({
   cloud_name: process.env.CLOUD_NAME,
   api_key: process.env.API_KEY,
@@ -21,35 +21,61 @@ app.get("/", (req, res) => {
   res.json({ ok: true, message: "API online 🚀" });
 });
 
-/* ================= ROTA DE IMAGENS ================= */
+/* ================= BUSCAR IMAGENS POR PASTA ================= */
 app.get("/images/*", async (req, res) => {
   try {
-    const folder = req.params[0]; // <- pega caminho completo com /
+    const folder = req.params[0];
 
-    const result = await cloudinary.api.resources({
-      type: "upload",
-      prefix: folder, // <- pega tudo dentro da pasta
-      max_results: 100
-    });
+    if (!folder) {
+      return res.status(400).json({
+        error: "Pasta não informada",
+      });
+    }
 
-    res.json(
-      result.resources.map(img => ({
-        id: img.asset_id,
-        publicId: img.public_id,
-        url: img.secure_url,
-        width: img.width,
-        height: img.height,
-      }))
-    );
+    const result = await cloudinary.search
+      .expression(`folder="${folder}" AND resource_type:image`)
+      .sort_by("created_at", "asc")
+      .max_results(100)
+      .execute();
+
+    const images = result.resources.map(img => ({
+      id: img.asset_id,
+      publicId: img.public_id,
+      url: img.secure_url,
+      width: img.width,
+      height: img.height,
+      format: img.format,
+      created: img.created_at,
+    }));
+
+    res.json(images);
 
   } catch (err) {
+    console.error("❌ ERRO CLOUDINARY:", err);
+
+    res.status(500).json({
+      error: "Erro ao buscar imagens",
+      details: err.message,
+    });
+  }
+});
+
+/* ================= LISTAR TODAS AS PASTAS ================= */
+/* opcional mas MUITO útil */
+app.get("/folders", async (req, res) => {
+  try {
+    const result = await cloudinary.api.root_folders();
+
+    res.json(result.folders.map(f => f.name));
+  } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Erro ao buscar imagens" });
+    res.status(500).json({ error: "Erro ao listar pastas" });
   }
 });
 
 /* ================= START SERVER ================= */
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () =>
-  console.log(`🔥 API rodando na porta ${PORT}`)
-);
+
+app.listen(PORT, () => {
+  console.log(`🔥 API rodando → http://localhost:${PORT}`);
+});
